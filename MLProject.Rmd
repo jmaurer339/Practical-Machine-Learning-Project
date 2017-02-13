@@ -1,0 +1,161 @@
+---
+output: 
+  html_document: 
+    keep_md: yes
+---
+<center>
+#Practical Machine Learning Project      
+###*Jim Maurer*</br>*February 2017*
+</center>
+</br>
+**Summary** </br>
+Human Activity Recognition (HAR) is an increasingly important area of research. In this research devices are attached to the human body. While the body is in motion these devices record an array of data. Commercially available products such as Jawbone Up, Nike FuelBand, and Fitbit are examples of such devices. For more extensive research more complex devices are used to capture a much wider variety of data. Much of the data collected using these devices is used simply to track performance, that is to quantify **how much** activity is completed. The data analyzed below was collected with the objective of understanding the quality, that is to quantify **how well** the activity is completed. 
+
+The data used in this study were collected from positioning four such devices called accelerometers in the waist, left thigh, right ankle, and right arm of six test subjects. Subjects were then asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the correct execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+The following analysis examines whether or not it is possible to utilize HAR data to predict, based on measures obtained from the accelerometers (position, pitch, roll, skew, etc.) the quality of the exercise; that is which of the five different fashions or classes were executed.
+
+**Citation** </br>
+Data, meta information and background on this study were obtained from the following source: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. *Qualitative Activity 
+Recognition of Weight Lifting Exercises*. Proceedings of 4th International Conference
+in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+(http://groupware.les.inf.puc-rio.br/har).
+</br>
+</br>
+**Set global option to import numeric data, load caret package, and set seed for reproducibility**
+```{r, message=FALSE, cache=TRUE}
+options( stringsAsFactors=F )     
+library(caret)
+set.seed(2233)  
+```
+
+**Read in data**
+```{r, message=FALSE, cache=TRUE}
+alltrain = read.csv("pml-training.csv")     
+fintest  = read.csv("pml-testing.csv")
+```
+
+**Futher split Training data into training and testing data**
+```{r, message=FALSE, cache=TRUE}
+inTrain  = createDataPartition(alltrain$classe, p = 3/4)[[1]]
+training = alltrain[ inTrain,]
+testing  = alltrain[-inTrain,]
+```
+
+##Exploratory Analysis
+**Examine structure of data set (output surpressed)**
+```{r, message=FALSE, results="hide", cache=TRUE}
+str(training)
+```
+
+**Report dimensionality of training data and one or two interesting variables**
+```{r, cache=TRUE}
+dim(training)
+table(training$classe)
+table(training$user_name)
+```
+
+##Data Cleaning
+**Eliminate Low Variance Predictors** 
+```{r, message=FALSE, cache=TRUE}
+trainingNZV <- nearZeroVar(training)
+training    <- training[ , -trainingNZV]
+```
+
+**Eliminate Predictors With 10% or more NA**
+```{r, message=FALSE, cache=TRUE}
+training <- training[ lapply( training, function(x) sum(is.na(x)) / length(x) ) < 0.1 ]
+```
+
+**Eliminate Some Specific Fields In Training data - by definition not useful for prediction**   
+```{r, message=FALSE, cache=TRUE}
+training <- training[-c(1, 2, 3, 4, 5)]
+```
+
+**Factorize Classe Variable**
+```{r, message=FALSE, cache=TRUE}
+training$classe <- as.factor(training$classe)
+```
+
+
+
+##Apply Similar Transformations To Testing data And to fintest (case) data  
+**Reduce dimensions of testing dataset to same as training / similariy Factorize classe**  
+```{r, message=FALSE, cache=TRUE}
+keepcol <- colnames(training)
+testing <- testing[keepcol]
+testing$classe <- as.factor(testing$classe)
+```
+
+
+**Perform similar dimension reduction on fintest (final 20 cases) dataset**
+```{r, message=FALSE, cache=TRUE}
+keepcol <- keepcol[ -54]          
+fintest <- fintest[keepcol]
+```
+
+**Re-examine dimensionality of training data**
+```{r, cache=TRUE}
+dim(training)
+```
+
+**Further split Training data**  </br>
+Since the Training data still has over 14,000 rows and 53 predictors, it is too large to reasonably process alternative algorithms (on my local machine). So the Training data is further split into four separate training data sets.
+```{r, message=FALSE, cache=TRUE}
+inTrain  = createDataPartition(training$classe, p = 1/2)[[1]]
+traina  = training[ inTrain,]
+trainb  = training[-inTrain,]
+
+inTrain  = createDataPartition(traina$classe, p = 1/2)[[1]]
+traina1  = traina[ inTrain,]
+traina2  = traina[-inTrain,]
+
+inTrain  = createDataPartition(trainb$classe, p = 1/2)[[1]]
+trainb1  = trainb[ inTrain,]
+trainb2  = trainb[-inTrain,]
+```
+
+#Begin Model Development
+**Fit a single decision tree to the traina1 data**
+```{r, cache=TRUE}
+mod_tree  <- train(classe ~ ., data = traina1, method = "rpart")
+confusionMatrix(mod_tree)
+```
+The within sample accuracy of the tree can be seen to be about 60%.
+</br>
+
+**Fit A Random Forest**
+```{r, cache=TRUE}
+mod_rf  <- train(classe ~ ., data = traina1, method = "rf")
+confusionMatrix(mod_rf)
+```
+The within sample accuracy of the random forest can be seen to be about 97%, a significant improvement over the single decision tree's predictive ability. 
+</br>
+
+
+##Out of Sample Validation
+**Predict against one of the other training sets**
+```{r, cache=TRUE}
+pred_rf <- predict(mod_rf, traina2)
+confusionMatrix(pred_rf, traina2$classe)
+```
+The out-of-sample sample accuracy of the random forest as measured against traina2 is 98%. The ability of this model to predict outside of the sample of data used to build the algorithmic is confirmed. The traina2 dataset had just over 3679 cases. However, we can confirm this by applying the model to the entire testing dataset with 4904 cases.     
+</br>
+
+**Predict against testing dataset**
+```{r, cache=TRUE}
+pred_rf <- predict(mod_rf, testing)
+confusionMatrix(pred_rf, testing$classe)
+```
+The initial results of the out-of-sample validation as seen with the traina2 dataset have been confirmed against the 4904 cases in the testing dataset. The model had an accuracy of 98% in this sample as well. 
+</br>
+  
+##Conclusion 
+
+Using a random forest it has been shown that it is possible to use data obtained from 
+accelerometers to accurately predict the manner in which an exercise was completed. An
+algorithm using this approach could be applied to provide a person with real-time feedback
+on the quality with which they are executing a particular routine. 
+</br>
+</br>
+</br>
